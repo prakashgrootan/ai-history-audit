@@ -17,6 +17,33 @@ SETTINGS="$HOME/.claude/settings.json"
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }
 dim()  { printf '\033[2m%s\033[0m\n' "$1"; }
 
+# Long steps read every transcript once, which takes a while on a big history.
+# Show that something is happening rather than leaving a dead terminal.
+busy_start() {
+  BUSY_MSG="$1"
+  if [ -t 1 ]; then
+    ( frames='|/-\'; i=0
+      while :; do
+        i=$(( (i + 1) % 4 ))
+        printf '\r\033[2m  %s %s\033[0m' "$BUSY_MSG" "${frames:$i:1}"
+        sleep 0.12
+      done ) &
+    BUSY_PID=$!
+  else
+    printf '  %s\n' "$BUSY_MSG"
+    BUSY_PID=""
+  fi
+}
+busy_stop() {
+  if [ -n "${BUSY_PID:-}" ]; then
+    kill "$BUSY_PID" 2>/dev/null
+    wait "$BUSY_PID" 2>/dev/null
+    printf '\r\033[K'
+  fi
+  BUSY_PID=""
+}
+trap 'busy_stop; exit 130' INT
+
 human_size() { du -sh "$1" 2>/dev/null | cut -f1; }
 
 oldest_file_date() {
@@ -58,12 +85,14 @@ report_store() {
     return
   fi
   local count size oldest helpers sessions
+  busy_start "reading $label"
   count=$(find "$dir" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
   # transcripts written by helper agents live under a subagents/ folder
   helpers=$(find "$dir" -path '*/subagents/*' -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
   sessions=$(( count - helpers ))
   size=$(human_size "$dir")
   oldest=$(oldest_file_date "$dir" | sort | head -1)
+  busy_stop
   bold "$label"
   printf '  transcript files      %s\n' "${count:-0}"
   printf '    sessions you had    %s\n' "${sessions:-0}"
@@ -85,8 +114,18 @@ PATTERN='postgres(ql)?://[^ "]*:[^ "]*@|mysql://[^ "]*:[^ "]*@|ghp_[A-Za-z0-9]{2
 for pair in "Claude Code:$CLAUDE_DIR" "Codex:$CODEX_DIR"; do
   label="${pair%%:*}"; dir="${pair#*:}"
   [ -d "$dir" ] || continue
-  hits=$(grep -rlE "$PATTERN" --include='*.jsonl' "$dir" 2>/dev/null | wc -l | tr -d ' ')
   total=$(find "$dir" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+  out=$(mktemp)
+  ( grep -rlE "$PATTERN" --include='*.jsonl' "$dir" 2>/dev/null | wc -l | tr -d ' ' > "$out" ) &
+  scan_pid=$!
+  if [ "${total:-0}" -gt 200 ]; then
+    busy_start "$label: reading ${total} files, this can take a minute"
+  else
+    busy_start "$label: reading ${total:-0} files"
+  fi
+  wait "$scan_pid" 2>/dev/null
+  busy_stop
+  hits=$(cat "$out" 2>/dev/null); rm -f "$out"
   printf '  %-14s %s of %s transcript files\n' "$label" "${hits:-0}" "${total:-0}"
 done
 echo
