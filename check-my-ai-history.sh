@@ -17,33 +17,6 @@ SETTINGS="$HOME/.claude/settings.json"
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }
 dim()  { printf '\033[2m%s\033[0m\n' "$1"; }
 
-# Long steps read every transcript once, which takes a while on a big history.
-# Show that something is happening rather than leaving a dead terminal.
-busy_start() {
-  BUSY_MSG="$1"
-  if [ -t 1 ]; then
-    ( frames='|/-\'; i=0
-      while :; do
-        i=$(( (i + 1) % 4 ))
-        printf '\r\033[2m  %s %s\033[0m' "$BUSY_MSG" "${frames:$i:1}"
-        sleep 0.12
-      done ) &
-    BUSY_PID=$!
-  else
-    printf '  %s\n' "$BUSY_MSG"
-    BUSY_PID=""
-  fi
-}
-busy_stop() {
-  if [ -n "${BUSY_PID:-}" ]; then
-    kill "$BUSY_PID" 2>/dev/null
-    wait "$BUSY_PID" 2>/dev/null
-    printf '\r\033[K'
-  fi
-  BUSY_PID=""
-}
-trap 'busy_stop; exit 130' INT
-
 human_size() { du -sh "$1" 2>/dev/null | cut -f1; }
 
 oldest_file_date() {
@@ -54,27 +27,43 @@ oldest_file_date() {
 }
 
 reachable_by_others() {
-  # Two ways another account gets in: as a group member, or as "everyone else".
-  # Every folder from here up to / must let them pass, so walk the whole chain.
+  # A heuristic, not a verdict. It reads POSIX mode bits on the folders in the path
+  # and on a sample of the transcripts themselves. It does NOT evaluate ACLs, other
+  # security layers, or whether a particular account is really a member of the group
+  # that owns every folder along the way. Treat a "yes" as "worth checking", and a
+  # "no" as "not reachable by mode bits alone".
   local target="$1" dir="$1" group_ok=1 other_ok=1 grp
   grp=$(stat -f '%Sg' "$target" 2>/dev/null || stat -c '%G' "$target" 2>/dev/null)
 
-  # the folder itself must also be listable, not just passable
+  # the folder itself must be listable, not merely passable
   [ -z "$(find "$target" -maxdepth 0 -perm -040 2>/dev/null)" ] && group_ok=0
   [ -z "$(find "$target" -maxdepth 0 -perm -004 2>/dev/null)" ] && other_ok=0
 
+  # every folder from here up to / must let an outsider pass through
   while [ "$dir" != "/" ] && [ -n "$dir" ]; do
     [ -z "$(find "$dir" -maxdepth 0 -perm -010 2>/dev/null)" ] && group_ok=0
     [ -z "$(find "$dir" -maxdepth 0 -perm -001 2>/dev/null)" ] && other_ok=0
     dir=$(dirname "$dir")
   done
 
+  # traversable folders mean nothing if the files themselves are owner-only, so sample
+  local sampled g_readable o_readable
+  sampled=$(find "$target" -name '*.jsonl' -maxdepth 4 2>/dev/null | head -50)
+  if [ -n "$sampled" ]; then
+    g_readable=$(printf '%s\n' "$sampled" | while read -r f; do
+      [ -n "$(find "$f" -maxdepth 0 -perm -040 2>/dev/null)" ] && echo x; done | wc -l | tr -d ' ')
+    o_readable=$(printf '%s\n' "$sampled" | while read -r f; do
+      [ -n "$(find "$f" -maxdepth 0 -perm -004 2>/dev/null)" ] && echo x; done | wc -l | tr -d ' ')
+    [ "${g_readable:-0}" -eq 0 ] && group_ok=0
+    [ "${o_readable:-0}" -eq 0 ] && other_ok=0
+  fi
+
   if [ "$other_ok" -eq 1 ]; then
-    echo "yes, by any account on this computer"
+    echo "probably, by any account on this computer"
   elif [ "$group_ok" -eq 1 ]; then
-    echo "yes, by any account in group $grp"
+    echo "probably, by any account in group $grp"
   else
-    echo "no"
+    echo "not by folder and file permissions"
   fi
 }
 
@@ -85,14 +74,12 @@ report_store() {
     return
   fi
   local count size oldest helpers sessions
-  busy_start "reading $label"
   count=$(find "$dir" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
   # transcripts written by helper agents live under a subagents/ folder
   helpers=$(find "$dir" -path '*/subagents/*' -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
   sessions=$(( count - helpers ))
   size=$(human_size "$dir")
   oldest=$(oldest_file_date "$dir" | sort | head -1)
-  busy_stop
   bold "$label"
   printf '  transcript files      %s\n' "${count:-0}"
   printf '    sessions you had    %s\n' "${sessions:-0}"
@@ -100,6 +87,7 @@ report_store() {
   printf '  space used            %s\n' "${size:-unknown}"
   printf '  oldest one            %s\n' "${oldest:-unknown}"
   printf '  readable by another account?  %s\n' "$(reachable_by_others "$dir")"
+  printf '    (mode bits only, ACLs not checked)\n'
   echo
 }
 
@@ -114,18 +102,8 @@ PATTERN='postgres(ql)?://[^ "]*:[^ "]*@|mysql://[^ "]*:[^ "]*@|ghp_[A-Za-z0-9]{2
 for pair in "Claude Code:$CLAUDE_DIR" "Codex:$CODEX_DIR"; do
   label="${pair%%:*}"; dir="${pair#*:}"
   [ -d "$dir" ] || continue
+  hits=$(grep -rlE "$PATTERN" --include='*.jsonl' "$dir" 2>/dev/null | wc -l | tr -d ' ')
   total=$(find "$dir" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
-  out=$(mktemp)
-  ( grep -rlE "$PATTERN" --include='*.jsonl' "$dir" 2>/dev/null | wc -l | tr -d ' ' > "$out" ) &
-  scan_pid=$!
-  if [ "${total:-0}" -gt 200 ]; then
-    busy_start "$label: reading ${total} files, this can take a minute"
-  else
-    busy_start "$label: reading ${total:-0} files"
-  fi
-  wait "$scan_pid" 2>/dev/null
-  busy_stop
-  hits=$(cat "$out" 2>/dev/null); rm -f "$out"
   printf '  %-14s %s of %s transcript files\n' "$label" "${hits:-0}" "${total:-0}"
 done
 echo
@@ -145,7 +123,7 @@ days = d.get('cleanupPeriodDays')
 if days is None:
     print("  [ ] cleanupPeriodDays is not set, so the tool's own default applies")
 elif days > 90:
-    print(f"  [ ] cleanupPeriodDays is {days} days. Old conversations are effectively never deleted.")
+    print(f"  [ ] cleanupPeriodDays is {days} days, which is extended retention. The documented default is 30.")
 else:
     print(f"  [x] cleanupPeriodDays is {days} days")
 deny = ((d.get('permissions') or {}).get('deny')) or []
