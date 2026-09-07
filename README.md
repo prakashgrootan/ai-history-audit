@@ -9,13 +9,16 @@ This script tells you what is on your own machine.
 
 ## What it does
 
+Read [the script](check-my-ai-history.sh) on this page first. Then:
+
 ```bash
+cd ~/Downloads
 curl -fsSLo check-my-ai-history.sh https://raw.githubusercontent.com/prakashgrootan/ai-history-audit/main/check-my-ai-history.sh
-less check-my-ai-history.sh
 bash check-my-ai-history.sh
+rm check-my-ai-history.sh
 ```
 
-Read it before you run it. Do not pipe scripts from the internet into your shell.
+Do not pipe this, or any script, from the internet straight into your shell.
 
 It reports, for Claude Code and Codex:
 
