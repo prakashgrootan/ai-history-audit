@@ -55,6 +55,9 @@ trap 'cleanup; exit 130' INT
 
 human_size() { du -sh "$1" 2>/dev/null | cut -f1; }
 
+# Single-quote a path for display, so a copied command survives spaces.
+shell_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
 # BSD and GNU stat take different flags, and GNU `stat -f` means filesystem status,
 # so it succeeds with the wrong answer instead of falling through. Branch explicitly.
 case "$(uname -s)" in
@@ -182,11 +185,12 @@ except Exception as e:
     print(f"  could not read settings ({e})"); raise SystemExit
 days = d.get('cleanupPeriodDays')
 if days is None:
-    print("  [ ] cleanupPeriodDays is not set, so the tool's own default applies")
+    print("  [i] user settings cleanupPeriodDays: not set. The documented default is 30 days.")
 elif days > 90:
-    print(f"  [ ] cleanupPeriodDays is {days} days, which is extended retention. The documented default is 30.")
+    print(f"  [i] user settings cleanupPeriodDays: {days} days, which is extended retention.")
+    print("      The documented default is 30.")
 else:
-    print(f"  [x] cleanupPeriodDays is {days} days")
+    print(f"  [i] user settings cleanupPeriodDays: {days} days")
 deny = ((d.get('permissions') or {}).get('deny')) or []
 env_rules = [r for r in deny if '.env' in str(r)]
 # Deciding whether .env is really protected needs the effective, merged configuration
@@ -196,23 +200,28 @@ if env_rules:
     print(f"  [i] user settings deny rules mentioning .env: {env_rules}")
 else:
     print("  [i] no deny rules mentioning .env in the user settings file")
-print("      Project, local and managed settings were not inspected. Run /status inside")
-print("      Claude Code to see which settings sources are active.")
 PY
 else
-  echo "  [ ] no Claude Code settings file found"
+  echo "  [i] no user settings file found at $SETTINGS"
 fi
+echo "      Only the user settings file was inspected. Run /status inside Claude Code to"
+echo "      see the loaded sources, and /permissions for the resolved allow and deny rules."
 if [ -d "$CODEX_ROOT" ]; then
   mode=$(stat_mode "$CODEX_ROOT")
   case "$mode" in
     700) echo "  [x] the Codex folder is closed to other accounts" ;;
-    *)   echo "  [ ] the Codex folder is mode $mode. Close it with: chmod 700 "$CODEX_ROOT" "$CODEX_ROOT/sessions"" ;;
+    *)   echo "  [ ] the Codex folder is mode $mode. Close it with: chmod 700 $(shell_quote "$CODEX_ROOT")" ;;
   esac
 fi
 if command -v fdesetup >/dev/null; then
-  fdesetup status 2>/dev/null | grep -q On \
-    && echo "  [x] disk encryption is on" \
-    || echo "  [ ] disk encryption looks off. Turn on FileVault."
+  fv=$(fdesetup status 2>/dev/null)
+  if printf '%s' "$fv" | grep -q 'FileVault is On'; then
+    echo "  [x] disk encryption is on"
+  elif printf '%s' "$fv" | grep -q 'FileVault is Off'; then
+    echo "  [ ] disk encryption is off. Turn on FileVault."
+  else
+    echo "  [?] could not determine disk encryption status. Check FileVault in System Settings."
+  fi
 fi
 echo
 dim "Two more that no script can check for you:"
