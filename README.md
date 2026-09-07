@@ -14,13 +14,13 @@ and read the copy you actually downloaded before running it:
 
 ```bash
 cd ~/Downloads
-curl -fsSLo check-my-ai-history.sh https://raw.githubusercontent.com/prakashgrootan/ai-history-audit/v1.0.1/check-my-ai-history.sh
+curl -fsSLo check-my-ai-history.sh https://raw.githubusercontent.com/prakashgrootan/ai-history-audit/v1.0.2/check-my-ai-history.sh
 cat check-my-ai-history.sh          # or: open -e check-my-ai-history.sh
 bash check-my-ai-history.sh
 rm check-my-ai-history.sh
 ```
 
-The URL names the `v1.0.1` tag rather than `main`, so it will not change when the main branch
+The URL names the `v1.0.2` tag rather than `main`, so it will not change when the main branch
 does. A tag is versioned rather than immutable; for genuine pinning, use a full commit hash in
 place of the tag. `cat` prints and returns; use `less` if you prefer a pager,
 and press `q` to leave it.
@@ -29,16 +29,20 @@ Do not pipe this, or any script, from the internet straight into your shell.
 
 It reports, for Claude Code and Codex:
 
-- how many transcript files exist, split into sessions you had and transcripts written by
-  helper agents on your behalf
-- how far back they go, and how much disk they use
+- how many transcript files exist. For Claude Code these are split into top-level files and
+  transcripts written by helper agents, because that tool separates them by folder. Codex is
+  reported as one number, since it records agent origin in session metadata instead
+- the oldest file's modification date, which is a rough age rather than a start date, since
+  resuming a session updates it, and how much disk the history folder uses
 - whether another account on the machine looks able to reach them. This is a mode-bit
   heuristic: it reads POSIX permissions on the folders in the path and on a sample of up to 50
   transcripts. It does not read ACLs, does not look below the transcript root, and cannot tell
   whether a particular account belongs to the group owning each folder. A positive means worth
   checking; a negative means nothing was found by mode bits alone
 - how many files contain credential-shaped text
-- which of the recommended settings you have not applied
+- what it can see of the recommended settings. It reads the user settings file only, so it
+  cannot tell you whether a project, local or managed setting covers you, and it cannot check
+  sandboxing, how you pin your tools, or how you handle secrets
 
 ## What it deliberately does not do
 
@@ -60,7 +64,7 @@ the history. In that order.
 
 ## Reducing what gets kept
 
-All four of these are documented settings, not tricks:
+These are documented settings, not tricks:
 
 | What | How |
 |---|---|
@@ -69,7 +73,7 @@ All four of these are documented settings, not tricks:
 | Codex: session transcripts | `codex exec --ephemeral` avoids writing rollout files for non-interactive runs. No documented equivalent for interactive sessions |
 | Keep none at all | the `CLAUDE_CODE_SKIP_PROMPT_HISTORY` environment variable. You lose session resume |
 | Clear one project | `claude project purge` |
-| Stop secret files being read | `"permissions": { "deny": ["Read(./.env)", "Read(./.env.*)"] }` |
+| Stop secret files being read | `"permissions": { "deny": ["Read(./.env)", "Read(./.env.*)"] }`. Claude Code merges user, project, local and managed settings, so check `/status` for what is actually in force |
 
 The deny rule covers the assistant's own file tools and the file commands it recognises in the
 shell, such as `cat`, `head`, `tail` and `sed`, plus shell redirections. It does not cover a

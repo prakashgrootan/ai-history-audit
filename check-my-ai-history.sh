@@ -13,9 +13,12 @@
 
 set -uo pipefail
 
-CLAUDE_DIR="$HOME/.claude/projects"
-CODEX_DIR="$HOME/.codex/sessions"
-SETTINGS="$HOME/.claude/settings.json"
+# Both tools let you move their storage, so honour the configured location.
+CLAUDE_HOME="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+CODEX_ROOT="${CODEX_HOME:-$HOME/.codex}"
+CLAUDE_DIR="$CLAUDE_HOME/projects"
+CODEX_DIR="$CODEX_ROOT/sessions"
+SETTINGS="$CLAUDE_HOME/settings.json"
 
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }
 dim()  { printf '\033[2m%s\033[0m\n' "$1"; }
@@ -45,7 +48,10 @@ busy_stop() {
   fi
   BUSY_PID=""
 }
-trap 'busy_stop; exit 130' INT
+SCRATCH=$(mktemp)
+cleanup() { busy_stop; rm -f "$SCRATCH"; }
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
 
 human_size() { du -sh "$1" 2>/dev/null | cut -f1; }
 
@@ -125,13 +131,13 @@ report_store() {
   bold "$label"
   printf '  transcript files      %s\n' "${count:-0}"
   if [ "${split:-}" = "split" ]; then
-    printf '    sessions you had    %s\n' "${sessions:-0}"
+    printf '    top-level files     %s\n' "${sessions:-0}"
     printf '    written by helpers  %s\n' "${helpers:-0}"
   else
     printf '    (not split: this tool records helper agents in metadata, not folders)\n'
   fi
   printf '  history folder size   %s\n' "${size:-unknown}"
-  printf '  oldest one            %s\n' "${oldest:-unknown}"
+  printf '  oldest file, modified %s\n' "${oldest:-unknown}"
   printf '  readable by another account?  %s\n' "$(reachable_by_others "$dir")"
   printf '    (mode bits on folders and up to 50 files, ACLs not checked)\n'
   echo
@@ -149,8 +155,7 @@ for pair in "Claude Code:$CLAUDE_DIR" "Codex:$CODEX_DIR"; do
   label="${pair%%:*}"; dir="${pair#*:}"
   [ -d "$dir" ] || continue
   total=$(find "$dir" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
-  out=$(mktemp)
-  ( grep -rlE "$PATTERN" --include='*.jsonl' "$dir" 2>/dev/null | wc -l | tr -d ' ' > "$out" ) &
+  ( grep -rlE "$PATTERN" --include='*.jsonl' "$dir" 2>/dev/null | wc -l | tr -d ' ' > "$SCRATCH" ) &
   scan_pid=$!
   if [ "${total:-0}" -gt 200 ]; then
     busy_start "$label: reading ${total} files, this can take a minute"
@@ -159,7 +164,7 @@ for pair in "Claude Code:$CLAUDE_DIR" "Codex:$CODEX_DIR"; do
   fi
   wait "$scan_pid" 2>/dev/null
   busy_stop
-  hits=$(cat "$out" 2>/dev/null); rm -f "$out"
+  hits=$(cat "$SCRATCH" 2>/dev/null)
   printf '  %-14s %s of %s transcript files\n' "$label" "${hits:-0}" "${total:-0}"
 done
 echo
@@ -184,26 +189,24 @@ else:
     print(f"  [x] cleanupPeriodDays is {days} days")
 deny = ((d.get('permissions') or {}).get('deny')) or []
 env_rules = [r for r in deny if '.env' in str(r)]
-norm = [str(r).replace(' ', '') for r in env_rules]
-has_base = any(r in ('Read(./.env)', 'Read(**/.env)') for r in norm)
-has_glob = any(r in ('Read(./.env.*)', 'Read(**/.env.*)') for r in norm)
-if has_base and has_glob:
-    print(f"  [x] deny rules cover .env and .env.* : {env_rules}")
-elif env_rules:
-    missing = '.env.* (so .env.local is still readable)' if has_base else '.env itself'
-    print(f"  [?] partial: deny rules mention .env but not {missing}")
-    print(f"      found {env_rules}. Inspect them rather than assuming coverage.")
+# Deciding whether .env is really protected needs the effective, merged configuration
+# and the tool's own pattern matching. Report what is in the user settings file, and
+# say plainly that this is not the whole picture.
+if env_rules:
+    print(f"  [i] user settings deny rules mentioning .env: {env_rules}")
 else:
-    print('  [ ] nothing stops the assistant reading your .env files')
+    print("  [i] no deny rules mentioning .env in the user settings file")
+print("      Project, local and managed settings were not inspected. Run /status inside")
+print("      Claude Code to see which settings sources are active.")
 PY
 else
   echo "  [ ] no Claude Code settings file found"
 fi
-if [ -d "$HOME/.codex" ]; then
-  mode=$(stat_mode "$HOME/.codex")
+if [ -d "$CODEX_ROOT" ]; then
+  mode=$(stat_mode "$CODEX_ROOT")
   case "$mode" in
     700) echo "  [x] the Codex folder is closed to other accounts" ;;
-    *)   echo "  [ ] the Codex folder is mode $mode. Close it with: chmod 700 ~/.codex ~/.codex/sessions" ;;
+    *)   echo "  [ ] the Codex folder is mode $mode. Close it with: chmod 700 "$CODEX_ROOT" "$CODEX_ROOT/sessions"" ;;
   esac
 fi
 if command -v fdesetup >/dev/null; then
