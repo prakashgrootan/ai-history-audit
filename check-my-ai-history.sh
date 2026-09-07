@@ -3,8 +3,11 @@
 #
 # Reports what your AI coding assistants have saved on this computer.
 #
-# It prints COUNTS ONLY. It never prints the contents of a conversation, it
-# writes nothing, and it sends nothing anywhere. Read it before you run it.
+# It prints metadata and counts only: dates, sizes, permission modes, counts and
+# configuration findings. It never prints transcript contents and never prints a
+# matched secret. It does not modify transcripts or settings. It creates and
+# deletes one temporary file holding a single count. It sends nothing anywhere.
+# Read it before you run it.
 #
 #   bash check-my-ai-history.sh
 
@@ -181,13 +184,15 @@ else:
     print(f"  [x] cleanupPeriodDays is {days} days")
 deny = ((d.get('permissions') or {}).get('deny')) or []
 env_rules = [r for r in deny if '.env' in str(r)]
-covering = [r for r in env_rules if str(r).replace(' ', '') in
-            ('Read(./.env)', 'Read(./.env.*)', 'Read(**/.env)', 'Read(**/.env.*)')]
-if covering:
-    print(f"  [x] deny rules cover the usual env files: {covering}")
+norm = [str(r).replace(' ', '') for r in env_rules]
+has_base = any(r in ('Read(./.env)', 'Read(**/.env)') for r in norm)
+has_glob = any(r in ('Read(./.env.*)', 'Read(**/.env.*)') for r in norm)
+if has_base and has_glob:
+    print(f"  [x] deny rules cover .env and .env.* : {env_rules}")
 elif env_rules:
-    print("  [?] found deny rules mentioning .env. Check they cover the files you care")
-    print(f"      about, since a rule naming one example file protects nothing: {env_rules}")
+    missing = '.env.* (so .env.local is still readable)' if has_base else '.env itself'
+    print(f"  [?] partial: deny rules mention .env but not {missing}")
+    print(f"      found {env_rules}. Inspect them rather than assuming coverage.")
 else:
     print('  [ ] nothing stops the assistant reading your .env files')
 PY

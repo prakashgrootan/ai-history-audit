@@ -14,14 +14,15 @@ and read the copy you actually downloaded before running it:
 
 ```bash
 cd ~/Downloads
-curl -fsSLo check-my-ai-history.sh https://raw.githubusercontent.com/prakashgrootan/ai-history-audit/v1.0.0/check-my-ai-history.sh
+curl -fsSLo check-my-ai-history.sh https://raw.githubusercontent.com/prakashgrootan/ai-history-audit/v1.0.1/check-my-ai-history.sh
 cat check-my-ai-history.sh          # or: open -e check-my-ai-history.sh
 bash check-my-ai-history.sh
 rm check-my-ai-history.sh
 ```
 
-The URL names the `v1.0.0` tag rather than `main`, so the file cannot change under you between
-reading it here and running it. `cat` prints and returns; use `less` if you prefer a pager,
+The URL names the `v1.0.1` tag rather than `main`, so it will not change when the main branch
+does. A tag is versioned rather than immutable; for genuine pinning, use a full commit hash in
+place of the tag. `cat` prints and returns; use `less` if you prefer a pager,
 and press `q` to leave it.
 
 Do not pipe this, or any script, from the internet straight into your shell.
@@ -41,12 +42,13 @@ It reports, for Claude Code and Codex:
 
 ## What it deliberately does not do
 
-- **It never prints the contents of a transcript.** Only counts, dates and sizes.
+- **It never prints the contents of a transcript.** It prints metadata and counts only: dates,
+  sizes, permission modes, counts and configuration findings.
 - **It never prints a matched secret.** For credential-shaped text it reports how many files
   matched, never what matched or where.
 - **It sends nothing anywhere.** No network calls at all.
-- **It writes nothing and changes no settings.** Read-only. Any fix it suggests, you apply
-  yourself.
+- **It does not modify transcripts or settings.** It creates and deletes one temporary file
+  holding a single count. Any fix it suggests, you apply yourself.
 
 A match is not proof of a live secret. Documentation, examples, placeholders and long-rotated
 values all match the same patterns.
@@ -63,8 +65,8 @@ All four of these are documented settings, not tricks:
 | What | How |
 |---|---|
 | Keep less history | `cleanupPeriodDays` in your settings file. The documented default is 30 days |
-| Codex: keep no history | `[history]` with `persistence = "none"` in `config.toml` |
-| Codex: cap the history file | `[history]` with `max_bytes`, which drops the oldest entries past the cap |
+| Codex: prompt history | `[history]` in `config.toml` takes `persistence = "none"` and `max_bytes`. These govern `history.jsonl`, the record of prompts you typed, not the session transcripts under `~/.codex/sessions` |
+| Codex: session transcripts | `codex exec --ephemeral` avoids writing rollout files for non-interactive runs. No documented equivalent for interactive sessions |
 | Keep none at all | the `CLAUDE_CODE_SKIP_PROMPT_HISTORY` environment variable. You lose session resume |
 | Clear one project | `claude project purge` |
 | Stop secret files being read | `"permissions": { "deny": ["Read(./.env)", "Read(./.env.*)"] }` |
