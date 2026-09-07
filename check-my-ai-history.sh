@@ -119,7 +119,8 @@ reachable_by_others() {
 report_store() {
   local label="$1" dir="$2"
   if [ ! -d "$dir" ]; then
-    dim "$label: not installed"
+    dim "$label: no transcript folder found at $dir"
+    dim "  (the tool may be installed but new, set not to persist sessions, or unused here)"
     return
   fi
   local count size oldest helpers sessions split="${3:-}"
@@ -201,16 +202,19 @@ if env_rules:
 else:
     print("  [i] no deny rules mentioning .env in the user settings file")
 PY
+elif [ -f "$SETTINGS" ]; then
+  echo "  [?] a user settings file exists at $SETTINGS, but Python 3 is unavailable,"
+  echo "      so it was not inspected."
 else
   echo "  [i] no user settings file found at $SETTINGS"
 fi
-echo "      Only the user settings file was inspected. Run /status inside Claude Code to"
-echo "      see the loaded sources, and /permissions for the resolved allow and deny rules."
+echo "      Nothing beyond the user settings file was looked at. Run /status inside Claude"
+echo "      Code for the loaded sources, and /permissions for the resolved allow and deny rules."
 if [ -d "$CODEX_ROOT" ]; then
   mode=$(stat_mode "$CODEX_ROOT")
   case "$mode" in
-    700) echo "  [x] the Codex folder is closed to other accounts" ;;
-    *)   echo "  [ ] the Codex folder is mode $mode. Close it with: chmod 700 $(shell_quote "$CODEX_ROOT")" ;;
+    700) echo "  [i] Codex root POSIX mode: 700, which closes it to other accounts. ACLs were not checked." ;;
+    *)   echo "  [ ] Codex root POSIX mode: $mode. Close it with: chmod 700 $(shell_quote "$CODEX_ROOT")" ;;
   esac
 fi
 if command -v fdesetup >/dev/null; then
