@@ -213,7 +213,7 @@ echo "      Code for the loaded sources, and /permissions for the resolved allow
 if [ -d "$CODEX_ROOT" ]; then
   mode=$(stat_mode "$CODEX_ROOT")
   case "$mode" in
-    700) echo "  [i] Codex root POSIX mode: 700, which closes it to other accounts. ACLs were not checked." ;;
+    700) echo "  [i] Codex root POSIX mode: 700. ACLs were not checked." ;;
     *)   echo "  [ ] Codex root POSIX mode: $mode. Close it with: chmod 700 $(shell_quote "$CODEX_ROOT")" ;;
   esac
 fi

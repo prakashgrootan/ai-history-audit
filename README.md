@@ -14,13 +14,13 @@ and read the copy you actually downloaded before running it:
 
 ```bash
 cd ~/Downloads
-curl -fsSLo check-my-ai-history.sh https://raw.githubusercontent.com/prakashgrootan/ai-history-audit/v1.0.3/check-my-ai-history.sh
+curl -fsSLo check-my-ai-history.sh https://raw.githubusercontent.com/prakashgrootan/ai-history-audit/v1.0.5/check-my-ai-history.sh
 cat check-my-ai-history.sh          # or: open -e check-my-ai-history.sh
 bash check-my-ai-history.sh
 rm check-my-ai-history.sh
 ```
 
-The URL names the `v1.0.3` tag rather than `main`, so it will not change when the main branch
+The URL names the `v1.0.5` tag rather than `main`, so it will not change when the main branch
 does. A tag is versioned rather than immutable; for genuine pinning, use a full commit hash in
 place of the tag. `cat` prints and returns; use `less` if you prefer a pager,
 and press `q` to leave it.
@@ -86,7 +86,9 @@ sandbox and set its filesystem boundary.
 
 **macOS only for now.** It branches on `uname` and has a GNU `stat` path for Linux, but that
 path is untested, so treat Linux as unsupported until someone has run it there. Tools it
-cannot find are reported as "not installed" rather than failing.
+A tool with no transcript folder is reported as exactly that, a folder it could not find,
+rather than as an absent installation: the tool may be installed but new, configured not to
+persist sessions, or simply unused in that account.
 
 ## Licence
 
